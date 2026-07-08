@@ -53,11 +53,23 @@ The lessons learned during that proof-of-concept are kept below (in each phase's
 - [ ] (MANUAL — human) Register a Google Cloud OAuth app: consent screen + OAuth client ID(s) (iOS + Android + Web client). Redirect URI uses the `slipstream://` scheme — confirm exact URI format against current `expo-auth-session`/better-auth Expo plugin docs at build time.
 - [ ] Wire secrets once they exist: GitHub Actions repo secrets for CI (Phase 7), `backend/.dev.vars` for local dev, `wrangler secret put` for production (Phase 3).
 
+### Configuring the Wrangler CLI locally
+
+Wrangler doesn't need a global install — Phase 1 pins it as a devDependency inside `backend/`, and `npx wrangler <command>` works from any directory in the meantime (useful for the auth steps below, which can run before `backend/` exists). Node 18+ is required; check with `node --version` first.
+
+There are two ways to authenticate, pick one:
+
+- [ ] **Option A — interactive OAuth login (recommended for local dev)**: (MANUAL — human, run directly in your own terminal, not via an automated agent tool call) `npx wrangler login`. This opens your default browser to Cloudflare's OAuth consent screen; approving it writes a token to a local Wrangler config file (on this Windows machine: `%APPDATA%\xdg.config\.wrangler\` — Wrangler follows the XDG config convention even on Windows). This step **cannot be run by an automated tool call** — completing the browser consent screen needs real-time human interaction, and a prior automated attempt in this session timed out waiting for the callback.
+- [ ] **Option B — API token env var (needed for CI, works for local too)**: use the scoped token created above. Set it as `CLOUDFLARE_API_TOKEN` in your shell — PowerShell (session-only): `$env:CLOUDFLARE_API_TOKEN = "<token>"`; PowerShell (persistent, current user): `setx CLOUDFLARE_API_TOKEN "<token>"` then open a new terminal; Git Bash (session-only): `export CLOUDFLARE_API_TOKEN=<token>`. Precedence note: Wrangler checks `CLOUDFLARE_API_TOKEN` first, then `CLOUDFLARE_API_KEY`+`CLOUDFLARE_EMAIL`, then a `wrangler login` OAuth token — if both a token env var and a prior `wrangler login` session exist, the env var wins.
+- [ ] **Verify**, regardless of which option was used: `npx wrangler whoami` — should print the authenticated account's email and the account ID(s) it can access. Confirm the account ID printed matches the one noted above.
+
 **Edge cases**
 - If a token is pasted into chat by accident: treat as compromised, rotate immediately (human-only), never store the leaked value anywhere in the repo.
 - If Google's OAuth app-verification review is slow: use "Testing" publish status with explicit test users so later phases aren't blocked.
+- If `wrangler whoami` reports being authenticated as the wrong account/token (e.g. a stale `CLOUDFLARE_API_TOKEN` left over from an earlier test): a known Wrangler behavior is that a set `CLOUDFLARE_API_TOKEN` env var always wins over `wrangler login`, even if you intended to switch to the OAuth session — unset the env var (`Remove-Item Env:\CLOUDFLARE_API_TOKEN` in PowerShell, or close and reopen the terminal if it was set via `setx`) if you want the OAuth login to take effect instead.
+- Don't set `CLOUDFLARE_API_TOKEN` via `setx` (persistent) if you also plan to `wrangler login` for day-to-day local dev — the persistent env var will silently shadow the OAuth session in every new terminal, which is confusing. Prefer: OAuth login for local dev (Option A), token env var scoped only to CI (GitHub Actions secret, Phase 7) — don't mix both persistently on the same machine.
 
-**Done when**: Cloudflare token + account ID exist outside the repo; Google OAuth client ID(s) exist matching the `slipstream://` scheme; `app.json`/`package.json` renamed.
+**Done when**: Cloudflare token + account ID exist outside the repo; `npx wrangler whoami` confirms local CLI authentication against the correct account; Google OAuth client ID(s) exist matching the `slipstream://` scheme; `app.json`/`package.json` renamed.
 
 ---
 
@@ -80,7 +92,7 @@ The lessons learned during that proof-of-concept are kept below (in each phase's
 - **`create-cloudflare --framework=hono` doesn't work reliably** — confirmed via two independent attempts (once via `npm create cloudflare@latest`, once via direct `npx create-cloudflare@latest`), both silently fell back to the default Hello-World-with-assets template regardless of the flag, with no `hono` dependency at all. This matches a known class of issue reported against `cloudflare/workers-sdk` (C3 dispatching to Hono's own `create-hono` tool doesn't reliably pass through the desired template argument). Use `npx create-hono@latest backend --template cloudflare-workers --pm npm --install` directly instead — confirmed to produce a real Hono app with `hono` as a runtime dependency.
 - Windows: Wrangler officially supports Windows 11 (this machine). Expect a trailing `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)` crash message from `npm create`/`npx create-hono` on process exit — this is a known Windows-specific Node/npm child-process cleanup bug, unrelated to whether the scaffold itself succeeded. Verify the actual output files rather than trusting the exit code/absence of a crash message.
 - `rm -rf` is blocked by this environment's permission policy even after conversational approval. If a scaffold attempt needs discarding, use `mv` to relocate it out of the repo rather than trying to delete it in place.
-- If `wrangler deploy` fails on auth locally: run `wrangler login` **directly in your own terminal**, not via an automated agent tool call — an automated `wrangler login` attempt timed out waiting for the browser OAuth callback in a prior session, since completing the browser consent step requires real-time human interaction. This is separate from the CI token (`CLOUDFLARE_API_TOKEN` env var); don't conflate the two.
+- If `wrangler deploy` fails on auth here: the CLI should already be authenticated from Phase 0's "Configuring the Wrangler CLI locally" section — re-run `npx wrangler whoami` to confirm before troubleshooting further.
 
 **Done when**: `backend/` exists with a real Hono app; `wrangler deploy` succeeds and returns a working `*.workers.dev` URL responding on `/health`; `.dev.vars` is gitignored.
 
