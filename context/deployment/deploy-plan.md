@@ -28,7 +28,16 @@ No monorepo tooling exists and none is being introduced — the backend lives at
 
 ## Current status (as of 2026-07-13)
 
-**Phases 0, 1, 2, 3, and 4 are executed. Stopped before starting Phase 5.**
+**Phases 0, 1, 2, 3, 4, and 5 are executed. Stopped before starting Phase 6.**
+
+- **Phase 5 (Realtime Chat via Durable Objects) done**: `ChatRoom` (`backend/src/durable-objects/chat-room.ts`) is one DO instance per ride (`env.CHAT_ROOM.getByName(rideId)`), SQLite-backed (`messages` table with the `_sql_schema_migrations` version-tracking pattern, since D1-style `PRAGMA user_version` isn't supported in DO SQLite storage), using the WebSocket Hibernation API (`ctx.acceptWebSocket`, `webSocketMessage`, `webSocketClose`). Per-socket identity (`userId`/`userName`) is carried via `serializeAttachment`/`deserializeAttachment` so it survives hibernation without re-hitting D1 on every message.
+  - **Hard rule from the plan honored**: `wrangler.jsonc` sets `"migrations": [{ "tag": "v1", "new_sqlite_classes": ["ChatRoom"] }]` from the very first deploy — never deployed the class without it.
+  - **Real bug caught by the plan's own "rehearse in preview first" instruction**: `durable_objects` bindings are **not inherited by named environments** in Wrangler (confirmed via an explicit deploy-time warning) — the first `--env preview` deploy silently produced a Worker with no `CHAT_ROOM` binding at all. Fixed by duplicating the `durable_objects` block under `env.preview` in `wrangler.jsonc` (the `migrations` array, by contrast, applied fine without duplication — it's tracked differently). This would have been caught eventually but rehearsing in preview first, as the plan mandated, surfaced it before it could reach production.
+  - **Access control**: chat is scoped to a ride's own organizer + joined participants (`isRideMember` in `chat.ts`), not open to any authenticated user — an outsider gets `404` on both the WS upgrade and the REST history endpoint (not `403`, to avoid confirming a ride ID exists to non-members).
+  - **Routes**: `GET /api/rides/:id/chat/messages` (REST history via a DO RPC call, `stub.getRecentMessages(50)`) and `GET /api/rides/:id/chat` (WS upgrade — membership-checked in the Worker *before* forwarding to the DO, with `userId`/`userName` appended as query params onto the forwarded request so the DO can tag the connection without its own D1 access).
+  - **Testing gotcha (not an app bug) worth remembering**: better-auth's session cookie name is `better-auth.session_token` over plain HTTP but **`__Secure-better-auth.session_token` over HTTPS** (the standard cookie-prefix security convention, applied automatically by better-auth). A hand-rolled HTTP client that reconstructs the `Cookie` header manually (rather than using a cookie-jar-aware client) must know this or every authenticated request 401s — cost real debugging time against preview before the cause was found. Not a concern for `@better-auth/expo`'s client plugin (Phase 6), which replays whatever `Set-Cookie` it actually received.
+  - Verified end-to-end on **both** preview and production, in that order: two real WebSocket clients (organizer + participant) connect, send messages, and both receive each other's messages in real time; a non-member's WS upgrade attempt gets `404`; chat history persists and is retrievable via the REST endpoint after both sockets fully disconnect (a real cross-connection persistence check against Cloudflare's actual infrastructure, not just `wrangler dev`'s local emulation — stronger evidence than Phase 3/4's local-only checks, since `infrastructure.md`'s own risk register flags that local dev doesn't perfectly emulate DO hibernation).
+  - Test dependencies (`ws`, `@types/ws`, installed with `--no-save` for a throwaway Node WS test harness) and all smoke-test data (users, ride, participants) removed from both environments afterward; `package.json`/`package-lock.json` confirmed clean.
 
 - **Phase 4 (Rides & Participants API) done**: `backend/src/routes/{profile,rides,participants,messages}.ts` mounted under `/api/profile` and `/api/rides` in `backend/src/index.ts`. All routes gated by `backend/src/middleware/require-auth.ts` (`requireAuth`), which calls `getAuth(c.env).api.getSession(...)` and returns 401 if no session — matches the PRD's "no anonymous access" access-control rule. Organizer is never a stored role: every organizer-only action (remove participant, read organizer messages) re-checks `ride.organizerId === userId` per request.
   - **New table**: `rider_profiles` (bio, riding style, experience level) — FR-002/FR-013 need fields the better-auth-managed `users` table doesn't have. Kept as a separate 1:1 table (real FK to `users.id`, since it's a brand-new table with no prior migration to rebuild) rather than extending `users` and risking drift with future `@better-auth/cli generate` runs. Migration `0003_rider_profiles.sql` applied local → preview-remote → prod-remote, confirmed clean.
@@ -203,10 +212,31 @@ There are two ways to authenticate, pick one:
 
 ---
 
-## Deferred phases (documented, not started)
+## Phase 5 — Realtime Chat via Durable Objects *(done)*
 
-### Phase 5 — Realtime Chat via Durable Objects (FR-012, nice-to-have)
-`ChatRoom` DO class, one instance per ride, WebSocket Hibernation API. **Hard rule**: the first migration entry referencing this class must set `new_sqlite_classes: ["ChatRoom"]` — a live class cannot be converted to SQLite storage after the fact; rehearse in a scratch/dev deploy first. Verify message persistence across hibernation in preview before replicating to production.
+**Goal**: FR-012 (nice-to-have) — a group chat scoped to each ride, backed by a `ChatRoom` Durable Object, one instance per ride, using the WebSocket Hibernation API.
+
+- [x] `backend/src/durable-objects/chat-room.ts` — `ChatRoom extends DurableObject<CloudflareBindings>`, SQLite storage (`messages` table + `_sql_schema_migrations` version tracking), `getRecentMessages(limit)` RPC method, `fetch`/`webSocketMessage`/`webSocketClose`/`webSocketError` hibernation handlers.
+- [x] `wrangler.jsonc`: `durable_objects.bindings` (`CHAT_ROOM` → `ChatRoom`) **and** `migrations: [{ tag: "v1", new_sqlite_classes: ["ChatRoom"] }]` from the first deploy — the hard rule from this plan.
+- [x] `backend/src/routes/chat.ts` — `GET /:id/chat/messages` (REST history) and `GET /:id/chat` (WS upgrade), both gated by ride membership (organizer or joined participant; a non-member gets `404`, checked *before* the DO is ever reached).
+- [x] Export `ChatRoom` from `backend/src/index.ts` (required for the DO binding to resolve) and mount `chat.ts` under `/api/rides`.
+- [x] Rehearse in a scratch/dev deploy first, per the hard rule — done via local `wrangler dev`, then **preview**, before production.
+- [x] Verify message persistence across hibernation in preview before replicating to production.
+
+**Edge cases**
+- **`durable_objects` bindings are not inherited by named Wrangler environments** (caught during the preview rehearsal step, exactly as the plan's "rehearse first" instruction intended): the first `--env preview` deploy produced an explicit Wrangler warning and silently shipped without the `CHAT_ROOM` binding. Fixed by duplicating the `durable_objects` block under `env.preview` in `wrangler.jsonc`. The top-level `migrations` array, by contrast, did not need duplication.
+- **Generated Wrangler types mark DO bindings optional** (`CHAT_ROOM?: DurableObjectNamespace<...>`) even though `wrangler.jsonc` binds it unconditionally — a known type-generation quirk, not a real possibility of it being unbound at runtime. Used a non-null assertion (`c.env.CHAT_ROOM!`) rather than adding a runtime guard for a case that can't happen.
+- **better-auth's session cookie name changes on HTTPS**: `better-auth.session_token` locally, `__Secure-better-auth.session_token` on any deployed (HTTPS) environment. Only matters for hand-rolled test clients that reconstruct the `Cookie` header manually (as this phase's WS test harness did) — real clients (browser cookie jars, `@better-auth/expo`) replay whatever `Set-Cookie` they actually received and are unaffected.
+- **In-memory JS state is lost on hibernation eviction**: per-connection identity is preserved instead via `ws.serializeAttachment()`/`deserializeAttachment()` (16KB limit, values lost if either side closes) rather than relying on any in-memory map from socket to user.
+- **PRAGMA `user_version` isn't supported in DO SQLite storage** — used the `_sql_schema_migrations` table pattern instead (from the Durable Objects skill reference) so future schema changes to `ChatRoom` have a real migration path.
+- **Access-control response code**: a non-member gets `404`, not `403`, on both the REST history and WS upgrade endpoints — deliberately avoids confirming a ride ID exists to someone who isn't part of it.
+- **Orphaned DO storage after test cleanup**: deleting a test ride from D1 does not delete that ride's `ChatRoom` DO instance or its SQLite storage — there's no ride left to reach it through the API, so it's harmless dead storage, not cleaned up explicitly (negligible size; no deletion API was worth adding for this).
+
+**Done when**: `ChatRoom` DO class deployed with `new_sqlite_classes` from its first migration; WebSocket chat works end-to-end (two real clients exchange messages in real time) against both preview and production; message persistence across a full disconnect/reconnect verified in preview before production; non-members correctly denied. **Status: done, 2026-07-13.**
+
+---
+
+## Deferred phases (documented, not started)
 
 ### Phase 6 — Expo Client Wiring
 Convert `app.json` → `app.config.ts`, add `extra.apiUrl` sourced from `EXPO_PUBLIC_API_URL`, `.env.example`, API client reading `Constants.expoConfig.extra`, better-auth Expo client plugin with SecureStore, `eas.json` with dev/preview/production profiles. Key edge case: `EXPO_PUBLIC_*` values are inlined at **build** time — a native EAS build must be rebuilt, not just restarted, to pick up a changed value.
@@ -235,11 +265,12 @@ This file. Update incrementally per phase completion as execution resumes — no
 - `context/foundation/prd.md` — functional requirements this plan satisfies
 - `context/foundation/tech-stack.md` — CI provider/flow intent for the deferred Phase 7
 - `app.json`, `package.json`, `.gitignore`, `.gitattributes` — renamed/extended in Phase 0–1 (done)
-- `backend/wrangler.jsonc`, `backend/src/index.ts`, `backend/.dev.vars.example` — scaffolded in Phase 1, extended in Phase 3 with the auth route mount and `BETTER_AUTH_URL` vars, extended in Phase 4 with the profile/rides/participants/messages route mounts (done)
+- `backend/wrangler.jsonc`, `backend/src/index.ts`, `backend/.dev.vars.example` — scaffolded in Phase 1, extended in Phase 3 with the auth route mount and `BETTER_AUTH_URL` vars, extended in Phase 4 with the profile/rides/participants/messages route mounts, extended in Phase 5 with the `CHAT_ROOM` DO binding + `new_sqlite_classes` migration (done — note `env.preview` needed its own `durable_objects` block, see Phase 5 Edge Cases)
 - `backend/drizzle.config.ts`, `backend/src/db/schema.ts` — created in Phase 2, extended in Phase 3 with `users`/`sessions`/`accounts`/`verifications`, extended in Phase 4 with `rider_profiles` (done)
 - `backend/src/lib/auth.ts` (runtime factory), `backend/src/lib/auth.cli-config.ts` (CLI-only, for schema generation) — created in Phase 3 (done)
 - `backend/src/middleware/require-auth.ts`, `backend/src/routes/{profile,rides,participants,messages}.ts` — created in Phase 4 (done)
+- `backend/src/durable-objects/chat-room.ts`, `backend/src/routes/chat.ts` — created in Phase 5 (done)
 
 ## Next step
 
-Phases 0 (Web OAuth client done; iOS/Android clients still pending, not blocking), 1, 2, 3, and 4 are done. **Stopped before starting Phase 5** — next session should resume with either **Phase 5 — Realtime Chat via Durable Objects** (nice-to-have, FR-012) or **Phase 6 — Expo Client Wiring** (arguably higher-value next, since both PRD success-criteria paths now have a working API behind them and the client is still unwired to any backend). NFR-002's seeded-load latency measurement (deferred from Phase 4) should happen before or during Phase 8's verification pass, not be forgotten.
+Phases 0 (Web OAuth client done; iOS/Android clients still pending, not blocking), 1, 2, 3, 4, and 5 are done. **Stopped before starting Phase 6** — next session should resume with **Phase 6 — Expo Client Wiring**: the backend now has everything both PRD success-criteria paths and the nice-to-have chat need, but the Expo client is still unwired to any of it. NFR-002's seeded-load latency measurement (deferred from Phase 4) should happen before or during Phase 8's verification pass, not be forgotten.

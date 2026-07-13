@@ -14,6 +14,10 @@
   "vars": {
     "BETTER_AUTH_URL": "https://slipstream-api.jd7552820.workers.dev"
   },
+  "durable_objects": {
+    "bindings": [{ "name": "CHAT_ROOM", "class_name": "ChatRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ChatRoom"] }],
   "env": {
     "preview": {
       "name": "slipstream-api-preview",
@@ -26,6 +30,9 @@
       ],
       "vars": {
         "BETTER_AUTH_URL": "https://slipstream-api-preview.jd7552820.workers.dev"
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "CHAT_ROOM", "class_name": "ChatRoom" }]
       }
     }
   }

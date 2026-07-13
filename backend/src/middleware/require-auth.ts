@@ -3,6 +3,7 @@ import { getAuth } from '../lib/auth'
 
 export type AuthVariables = {
   userId: string
+  userName: string
 }
 
 // Login is required for the whole app (no anonymous browsing) — see
@@ -20,5 +21,6 @@ export const requireAuth = createMiddleware<{
   }
 
   c.set('userId', session.user.id)
+  c.set('userName', session.user.name)
   await next()
 })
