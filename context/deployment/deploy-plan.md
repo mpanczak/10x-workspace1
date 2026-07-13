@@ -28,7 +28,16 @@ No monorepo tooling exists and none is being introduced — the backend lives at
 
 ## Current status (as of 2026-07-13)
 
-**Phases 0, 1, 2, 3, 4, and 5 are executed. Stopped before starting Phase 6.**
+**Phases 0, 1, 2, 3, 4, 5, and 6 are executed. Stopped before starting Phase 7.**
+
+- **Phase 6 (Expo Client Wiring) done**: `app.json` converted to `app.config.ts` (static `ExpoConfig` object) with `extra.apiUrl` sourced from `process.env.EXPO_PUBLIC_API_URL`; `.env.example` added (root `.gitignore` had a gap — only `.env*.local` was ignored, not bare `.env` — fixed alongside). `lib/api-client.ts` resolves `API_URL` from `Constants.expoConfig.extra.apiUrl` (throws a clear error if unset rather than silently hitting `undefined`). `lib/auth-client.ts` wires `createAuthClient` (`better-auth/react`) with the `@better-auth/expo` client plugin, `expo-secure-store` as the token storage. `eas.json` has `development`/`preview`/`production` build profiles, each setting `EXPO_PUBLIC_API_URL` to the correct deployed Worker (preview or production).
+  - **Missing dependency caught by actually bundling, not by reading docs**: `@better-auth/expo`'s client imports `expo-network` (for online/offline state) — not called out in Phase 3's research summary. Metro's web bundle failed with a clear "Unable to resolve module" error; fixed with `npx expo install expo-network`. A reminder that peer-dependency completeness for a library this new is worth verifying by actually building, not just trusting a docs-derived package list.
+  - **Two real backend bugs surfaced only by driving the client through an actual browser** (not just curl, which doesn't send `Origin`/CORS preflight semantics):
+    1. **CORS preflight 404'd**: `/api/auth/*` was registered via `app.on(['GET', 'POST'], ...)` — an `OPTIONS` preflight request didn't match any route at all. Fixed by adding `hono/cors` middleware on `/api/*` in `backend/src/index.ts`, scoped to `http://localhost:*`/`127.0.0.1:*` origins with `credentials: true` (native iOS/Android traffic doesn't send an `Origin` header and isn't subject to CORS at all — this exists purely for the Expo web target during local dev/testing, per NFR-001's iOS/Android-only scope).
+    2. **`403 Invalid origin`** from better-auth itself once CORS was fixed: `trustedOrigins` only had `slipstream://`/`exp://`, not the browser origin. Added `http://localhost:*`/`http://127.0.0.1:*` (better-auth supports wildcard origin patterns, confirmed via `node_modules/better-auth/dist/auth/trusted-origins.mjs`) to `backend/src/lib/auth.ts`. Both entries are dev-only conveniences, same tightening note as `exp://`: revisit once local web testing is no longer part of the workflow.
+  - **Verification honestly split into two tiers, and said so at the time rather than overclaiming**: this environment has no attached browser or browser-automation tool, so full interactive click-through couldn't be done unilaterally. Lower-risk pieces (config resolution via `npx expo config`, Metro bundle compiling cleanly) were verified directly; the actual browser round-trip (temporary `app/dev-auth-test.tsx` screen, removed afterward) was verified **with the user** driving `expo start --web` in their own browser — which is exactly what surfaced both CORS/origin bugs above. Both fixes deployed and confirmed via `curl` (simulating the browser's `Origin` header) on **both** preview and production, then reconfirmed in the user's actual browser.
+  - Test users from both the automated curl checks and the manual browser click-through removed from preview and production D1 afterward.
+  - EAS builds themselves (`eas build --profile ...`) were not run — that requires an authenticated Expo account and actually kicks off a real (billed) cloud build, out of scope for "wiring." `eas.json` is ready for whenever that's done manually.
 
 - **Phase 5 (Realtime Chat via Durable Objects) done**: `ChatRoom` (`backend/src/durable-objects/chat-room.ts`) is one DO instance per ride (`env.CHAT_ROOM.getByName(rideId)`), SQLite-backed (`messages` table with the `_sql_schema_migrations` version-tracking pattern, since D1-style `PRAGMA user_version` isn't supported in DO SQLite storage), using the WebSocket Hibernation API (`ctx.acceptWebSocket`, `webSocketMessage`, `webSocketClose`). Per-socket identity (`userId`/`userName`) is carried via `serializeAttachment`/`deserializeAttachment` so it survives hibernation without re-hitting D1 on every message.
   - **Hard rule from the plan honored**: `wrangler.jsonc` sets `"migrations": [{ "tag": "v1", "new_sqlite_classes": ["ChatRoom"] }]` from the very first deploy — never deployed the class without it.
@@ -236,10 +245,31 @@ There are two ways to authenticate, pick one:
 
 ---
 
-## Deferred phases (documented, not started)
+## Phase 6 — Expo Client Wiring *(done)*
 
-### Phase 6 — Expo Client Wiring
-Convert `app.json` → `app.config.ts`, add `extra.apiUrl` sourced from `EXPO_PUBLIC_API_URL`, `.env.example`, API client reading `Constants.expoConfig.extra`, better-auth Expo client plugin with SecureStore, `eas.json` with dev/preview/production profiles. Key edge case: `EXPO_PUBLIC_*` values are inlined at **build** time — a native EAS build must be rebuilt, not just restarted, to pick up a changed value.
+**Goal**: The Expo Router client can reach the deployed backend — config, an API base-URL resolution path, and a working better-auth session (email+password at minimum) — not full feature screens.
+
+- [x] Convert `app.json` → `app.config.ts` (static `ExpoConfig`, all prior fields preserved).
+- [x] Add `extra.apiUrl` sourced from `EXPO_PUBLIC_API_URL`.
+- [x] `.env.example` (and a local, gitignored `.env` for dev — see Edge Cases for the `.gitignore` gap this exposed).
+- [x] `lib/api-client.ts` — API client reading `Constants.expoConfig.extra.apiUrl`, throws clearly if unset rather than silently calling `undefined`.
+- [x] `lib/auth-client.ts` — better-auth Expo client plugin (`@better-auth/expo/client`) with `expo-secure-store` token storage.
+- [x] `eas.json` with `development`/`preview`/`production` build profiles, each pointing `EXPO_PUBLIC_API_URL` at the right deployed Worker.
+- [x] Verify against the real deployed preview backend — done via a temporary `app/dev-auth-test.tsx` screen (removed afterward), driven by the user in their own browser since this environment has no browser-automation tool.
+
+**Edge cases**
+- **`EXPO_PUBLIC_*` values are inlined at build time**: a native EAS build must be *rebuilt*, not just restarted, to pick up a changed value. Not yet exercised against a real EAS build (see below) — worth re-confirming once one runs.
+- **`.gitignore` only covered `.env*.local`, not bare `.env`**: since the plan calls for a real local `.env` (not just `.env.local`), this was a genuine gap — fixed by adding `.env` alongside `.env*.local`.
+- **`@better-auth/expo`'s client needs `expo-network`** as an additional peer dependency (for online/offline state) — not surfaced by Phase 3's research, only by actually bundling for the web target and reading Metro's "Unable to resolve module" error. `npx expo install expo-network` fixed it.
+- **CORS preflight 404'd** (browser-only — native iOS/Android traffic isn't subject to CORS and never hit this): `/api/auth/*` was registered `GET`/`POST` only, so an `OPTIONS` preflight matched no route. Fixed with `hono/cors` on `/api/*`, scoped to `http://localhost:*`/`127.0.0.1:*` with `credentials: true` — a dev/testing convenience for Expo's web target, not something production mobile users depend on.
+- **`403 Invalid origin` from better-auth itself**, once CORS was fixed: `trustedOrigins` didn't include the browser's origin. Added `http://localhost:*`/`http://127.0.0.1:*` (better-auth supports wildcard patterns) alongside the existing `slipstream://`/`exp://` dev-only entries in `backend/src/lib/auth.ts`.
+- **This environment can't drive a real browser**: verification was explicitly split into what could be checked unilaterally (Metro bundle compiles, `npx expo config` resolves `extra.apiUrl` correctly) versus what needed the user's own browser (the actual sign-up round-trip) — flagged honestly rather than assumed. That manual check is exactly what surfaced both backend bugs above.
+
+**Done when**: The Expo client can construct a working `authClient` from deployed config and complete an email+password sign-up/get-session round-trip against the real preview backend, confirmed in an actual browser. **Status: done, 2026-07-13** — confirmed on both preview and production (curl-simulated `Origin` header) and reconfirmed by the user in a live browser against preview. Full native (iOS/Android) verification and an actual EAS build are still open — the former is Phase 8's job, the latter was out of scope here (needs an authenticated Expo account and triggers a real billed cloud build).
+
+---
+
+## Deferred phases (documented, not started)
 
 ### Phase 7 — CI/CD via GitHub Actions
 `.github/workflows/backend-preview.yml` (auto on push/PR touching `backend/**`, non-destructive `wrangler versions upload --env preview`) and `.github/workflows/backend-deploy.yml` (`workflow_dispatch` only, gated by a GitHub `production` Environment with required reviewers, promotes an already-verified preview version). Implements the `ci_provider: github-actions` / `ci_default_flow: manual-promotion` intent recorded in `tech-stack.md`.
@@ -265,12 +295,13 @@ This file. Update incrementally per phase completion as execution resumes — no
 - `context/foundation/prd.md` — functional requirements this plan satisfies
 - `context/foundation/tech-stack.md` — CI provider/flow intent for the deferred Phase 7
 - `app.json`, `package.json`, `.gitignore`, `.gitattributes` — renamed/extended in Phase 0–1 (done)
-- `backend/wrangler.jsonc`, `backend/src/index.ts`, `backend/.dev.vars.example` — scaffolded in Phase 1, extended in Phase 3 with the auth route mount and `BETTER_AUTH_URL` vars, extended in Phase 4 with the profile/rides/participants/messages route mounts, extended in Phase 5 with the `CHAT_ROOM` DO binding + `new_sqlite_classes` migration (done — note `env.preview` needed its own `durable_objects` block, see Phase 5 Edge Cases)
+- `backend/wrangler.jsonc`, `backend/src/index.ts`, `backend/.dev.vars.example` — scaffolded in Phase 1, extended in Phase 3 with the auth route mount and `BETTER_AUTH_URL` vars, extended in Phase 4 with the profile/rides/participants/messages route mounts, extended in Phase 5 with the `CHAT_ROOM` DO binding + `new_sqlite_classes` migration, extended in Phase 6 with `hono/cors` on `/api/*` (done — note `env.preview` needed its own `durable_objects` block, see Phase 5 Edge Cases)
 - `backend/drizzle.config.ts`, `backend/src/db/schema.ts` — created in Phase 2, extended in Phase 3 with `users`/`sessions`/`accounts`/`verifications`, extended in Phase 4 with `rider_profiles` (done)
-- `backend/src/lib/auth.ts` (runtime factory), `backend/src/lib/auth.cli-config.ts` (CLI-only, for schema generation) — created in Phase 3 (done)
+- `backend/src/lib/auth.ts` (runtime factory, `trustedOrigins` extended in Phase 6 with local web dev origins), `backend/src/lib/auth.cli-config.ts` (CLI-only, for schema generation) — created in Phase 3 (done)
 - `backend/src/middleware/require-auth.ts`, `backend/src/routes/{profile,rides,participants,messages}.ts` — created in Phase 4 (done)
 - `backend/src/durable-objects/chat-room.ts`, `backend/src/routes/chat.ts` — created in Phase 5 (done)
+- `app.config.ts` (replaces `app.json`), `.env.example`, `eas.json`, `lib/api-client.ts`, `lib/auth-client.ts` — created in Phase 6 (done)
 
 ## Next step
 
-Phases 0 (Web OAuth client done; iOS/Android clients still pending, not blocking), 1, 2, 3, 4, and 5 are done. **Stopped before starting Phase 6** — next session should resume with **Phase 6 — Expo Client Wiring**: the backend now has everything both PRD success-criteria paths and the nice-to-have chat need, but the Expo client is still unwired to any of it. NFR-002's seeded-load latency measurement (deferred from Phase 4) should happen before or during Phase 8's verification pass, not be forgotten.
+Phases 0 (Web OAuth client done; iOS/Android clients still pending, not blocking), 1, 2, 3, 4, 5, and 6 are done. **Stopped before starting Phase 7** — next session should resume with **Phase 7 — CI/CD via GitHub Actions**. NFR-002's seeded-load latency measurement (deferred from Phase 4) and a real native (iOS/Android) + EAS-build verification pass (deferred from Phase 6) should both happen during Phase 8, not be forgotten.

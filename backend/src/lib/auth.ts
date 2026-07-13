@@ -19,9 +19,11 @@ export function getAuth(env: CloudflareBindings) {
     }),
     baseURL: env.BETTER_AUTH_URL,
     secret: env.BETTER_AUTH_SECRET,
-    // exp:// is Expo Go's dev-only scheme; tighten to slipstream:// only once
-    // Expo Go testing is no longer part of the workflow.
-    trustedOrigins: ['slipstream://', 'exp://'],
+    // exp:// is Expo Go's dev-only scheme; http://localhost:* / 127.0.0.1:*
+    // is Expo's web target (react-native-web) during local dev/testing —
+    // tighten all three dev-only entries to just slipstream:// once Expo Go
+    // and local web testing are no longer part of the workflow.
+    trustedOrigins: ['slipstream://', 'exp://', 'http://localhost:*', 'http://127.0.0.1:*'],
     emailAndPassword: {
       enabled: true,
     },

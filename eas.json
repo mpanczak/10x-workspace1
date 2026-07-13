@@ -1,0 +1,30 @@
+{
+  "cli": {
+    "version": ">= 20.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://slipstream-api-preview.jd7552820.workers.dev"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://slipstream-api-preview.jd7552820.workers.dev"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://slipstream-api.jd7552820.workers.dev"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
