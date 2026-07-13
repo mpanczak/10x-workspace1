@@ -112,6 +112,23 @@ export const accountsRelations = relations(accounts, ({ one }) => ({
 
 // App tables
 
+export const riderProfiles = sqliteTable('rider_profiles', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id')
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  bio: text('bio'),
+  ridingStyle: text('riding_style').notNull(),
+  experienceLevel: text('experience_level').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+})
+
 export const motorcycleProfiles = sqliteTable('motorcycle_profiles', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   // Plain text, no FK constraint: adding one now would require a SQLite

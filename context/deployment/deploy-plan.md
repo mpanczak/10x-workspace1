@@ -28,7 +28,15 @@ No monorepo tooling exists and none is being introduced — the backend lives at
 
 ## Current status (as of 2026-07-13)
 
-**Phases 0, 1, 2, and 3 are executed. Stopped before starting Phase 4.**
+**Phases 0, 1, 2, 3, and 4 are executed. Stopped before starting Phase 5.**
+
+- **Phase 4 (Rides & Participants API) done**: `backend/src/routes/{profile,rides,participants,messages}.ts` mounted under `/api/profile` and `/api/rides` in `backend/src/index.ts`. All routes gated by `backend/src/middleware/require-auth.ts` (`requireAuth`), which calls `getAuth(c.env).api.getSession(...)` and returns 401 if no session — matches the PRD's "no anonymous access" access-control rule. Organizer is never a stored role: every organizer-only action (remove participant, read organizer messages) re-checks `ride.organizerId === userId` per request.
+  - **New table**: `rider_profiles` (bio, riding style, experience level) — FR-002/FR-013 need fields the better-auth-managed `users` table doesn't have. Kept as a separate 1:1 table (real FK to `users.id`, since it's a brand-new table with no prior migration to rebuild) rather than extending `users` and risking drift with future `@better-auth/cli generate` runs. Migration `0003_rider_profiles.sql` applied local → preview-remote → prod-remote, confirmed clean.
+  - **Routes**: `profile.ts` (rider profile GET/PUT; motorcycle "garage" GET/POST/PUT/DELETE, multiple motorcycles per user), `rides.ts` (POST create with motorcycle-ownership check, GET list with region/ridingStyle/startAfter/startBefore filters + limit/offset mapped onto the Phase 2 indexes, GET detail returning organizer + their rider profile + motorcycle + participants), `participants.ts` (POST join, DELETE organizer-only remove), `messages.ts` (POST message-to-organizer, GET organizer-only read — a private channel, not public comments, per the PRD's Socrates note on moderation debt).
+  - Validation via `zod` + `@hono/zod-validator` on all mutating endpoints; confirmed a malformed ride-create request returns 400 with per-field errors.
+  - **Join atomicity (edge case from the plan) resolved via the existing unique index, not `batch()`**: the Phase 2 unique index on `(ride_id, user_id)` means a duplicate join fails at the DB layer with `SQLITE_CONSTRAINT_UNIQUE` — no separate `batch()` call was needed for this specific operation since it's a single insert. Caught and mapped to `409 already_joined`. See Edge Cases below for why the naive `err.message.includes(...)` check first failed silently as a 500.
+  - Verified end-to-end on **both** preview and production: full Path 1 (participant: sign up → join → message organizer) and Path 2 (organizer: sign up → set profile → add motorcycle → create ride → see participant + message in ride detail) via direct HTTP calls, plus authorization boundaries (403 on non-organizer remove/read, 409 on duplicate join, 401 on logged-out). Ride list latency measured at ~0.45–0.57s against a near-empty table — **this is not the NFR-002 load test** (Phase 4's own edge-case note calls for measuring "under a seeded dataset"); real p95-under-load verification is still open, tracked forward into Phase 8.
+  - Smoke-test rows (users, rider/motorcycle profiles, rides, participants, messages) deleted from both D1s afterward.
 
 - **Phase 3 (Auth) done**: better-auth `1.6.23` + `@better-auth/drizzle-adapter` + `@better-auth/expo` wired against D1 via `drizzle-orm/d1`. `backend/src/lib/auth.ts` exports the runtime `getAuth(env)` factory (constructed per-request); `backend/src/lib/auth.cli-config.ts` is the CLI-only plain `auth` export used solely by `@better-auth/cli generate`. Mounted at `app.on(['GET','POST'], '/api/auth/*', ...)` in `backend/src/index.ts`.
   - Schema: `users`/`sessions`/`accounts`/`verifications` tables (plural, `usePlural: true` to match the app's existing plural naming) generated via `@better-auth/cli generate` into a **separate temp file** (`src/db/auth-schema.ts`), then hand-merged into `src/db/schema.ts` and the temp file deleted — the CLI's `generate --output` is confirmed destructive/overwriting against a file with unrelated existing tables (would have wiped `rides`/`ride_participants`/etc had it targeted `schema.ts` directly).
@@ -172,25 +180,26 @@ There are two ways to authenticate, pick one:
 
 ---
 
-## Phase 4 — Rides & Participants API *(not started)*
+## Phase 4 — Rides & Participants API *(done)*
 
 **Goal**: FR-002/003/013, FR-004/005, FR-006, FR-007, FR-008, FR-009, FR-010 servable via Hono routes, satisfying NFR-002 (<2s p95 list load).
 
-- [ ] `backend/src/routes/profile.ts` — CRUD for user + motorcycle profile.
-- [ ] `backend/src/routes/rides.ts` — create / list+filter / detail.
-- [ ] `backend/src/routes/participants.ts` — join (no approval step) / organizer-only remove.
-- [ ] `backend/src/routes/messages.ts` — message to organizer (flat table, distinct from Phase 5's realtime chat).
-- [ ] Middleware: logged-out blocked; flat authenticated-user role; organizer role derived contextually.
-- [ ] Input validation (`zod` + Hono validator middleware).
-- [ ] Deploy to preview; smoke test every endpoint.
+- [x] `backend/src/routes/profile.ts` — CRUD for user + motorcycle profile. Rider profile lives in a new `rider_profiles` table (see Current Status); motorcycle profiles support multiple per user (a "garage"), each selectable per ride.
+- [x] `backend/src/routes/rides.ts` — create / list+filter / detail. Detail includes organizer + their rider profile + motorcycle + participants list in one response.
+- [x] `backend/src/routes/participants.ts` — join (no approval step) / organizer-only remove.
+- [x] `backend/src/routes/messages.ts` — message to organizer (flat table, distinct from Phase 5's realtime chat). Read is organizer-only (private channel, not public comments).
+- [x] Middleware: logged-out blocked (`backend/src/middleware/require-auth.ts`); flat authenticated-user role; organizer role derived contextually (re-checked per request against `ride.organizerId`, never stored).
+- [x] Input validation (`zod` + `@hono/zod-validator`).
+- [x] Deploy to preview (and production, since production tracks preview closely in this project); smoke test every endpoint.
 
 **Edge cases**
-- Join-ride atomicity via `batch()` (no interactive transactions in D1).
-- NFR-002: index the actual filter columns; measure list-endpoint latency under a seeded dataset before calling this done.
-- Privacy guardrail: keep public start address and any future precise-location field as clearly distinct fields/serializers.
-- Cross-user data bleed in smoke tests → revisit the Phase 3 factory-function checklist first.
+- **Join-ride atomicity**: resolved via the Phase 2 unique index on `(ride_id, user_id)` rather than `batch()` — a single-statement insert with a DB-enforced uniqueness constraint doesn't need multi-statement atomicity. `batch()` remains the right tool if a future change makes join a multi-statement operation (e.g. a participant-count cap).
+- **D1's actual unique-constraint error is buried in a nested `cause` chain, not the top-level error's `message`**: the initial `err.message.includes('UNIQUE constraint failed')` check silently missed it (top-level message is a generic Drizzle query-failure message) and duplicate joins 500'd instead of returning 409. Fixed by walking `err.cause` recursively (`isUniqueConstraintError` in `participants.ts`) — confirmed the actual string lives 2 levels down (`D1_ERROR: UNIQUE constraint failed: ...` inside `.cause.message`). Caught via a live duplicate-join test, not by inspection — worth remembering that D1/Drizzle error shapes need runtime verification, not just reading the docs.
+- NFR-002: indexes from Phase 2 are in place and filters map directly onto them; **the p95-under-realistic-load measurement itself is not done** — only measured against a handful of rows. Don't treat the ~0.5s figure recorded here as NFR-002 verification; re-measure with a seeded dataset (Phase 8).
+- Privacy guardrail: `startAddress` is the only location field exposed; no separate precise-location field exists yet, so there's nothing to conflate it with yet — revisit if a future FR adds live GPS tracking.
+- Cross-user data bleed: none observed in smoke tests (organizer-only reads correctly 403 for the non-organizer participant); the Phase 3 per-request factory pattern (no module-scope `betterAuth()`) holds here too — reconfirmed via `grep` before calling this phase done.
 
-**Done when**: Both PRD success-criteria paths work end-to-end via direct API calls against the deployed preview Worker; list latency stays comfortably under 2s.
+**Done when**: Both PRD success-criteria paths work end-to-end via direct API calls against the deployed preview Worker; list latency stays comfortably under 2s. **Status: done, 2026-07-13** — verified on both preview and production against a near-empty dataset; NFR-002's seeded-load measurement is explicitly still open (see Edge Cases).
 
 ---
 
@@ -226,10 +235,11 @@ This file. Update incrementally per phase completion as execution resumes — no
 - `context/foundation/prd.md` — functional requirements this plan satisfies
 - `context/foundation/tech-stack.md` — CI provider/flow intent for the deferred Phase 7
 - `app.json`, `package.json`, `.gitignore`, `.gitattributes` — renamed/extended in Phase 0–1 (done)
-- `backend/wrangler.jsonc`, `backend/src/index.ts`, `backend/.dev.vars.example` — scaffolded in Phase 1, extended in Phase 3 with the auth route mount and `BETTER_AUTH_URL` vars (done)
-- `backend/drizzle.config.ts`, `backend/src/db/schema.ts` — created in Phase 2, extended in Phase 3 with `users`/`sessions`/`accounts`/`verifications` (done)
+- `backend/wrangler.jsonc`, `backend/src/index.ts`, `backend/.dev.vars.example` — scaffolded in Phase 1, extended in Phase 3 with the auth route mount and `BETTER_AUTH_URL` vars, extended in Phase 4 with the profile/rides/participants/messages route mounts (done)
+- `backend/drizzle.config.ts`, `backend/src/db/schema.ts` — created in Phase 2, extended in Phase 3 with `users`/`sessions`/`accounts`/`verifications`, extended in Phase 4 with `rider_profiles` (done)
 - `backend/src/lib/auth.ts` (runtime factory), `backend/src/lib/auth.cli-config.ts` (CLI-only, for schema generation) — created in Phase 3 (done)
+- `backend/src/middleware/require-auth.ts`, `backend/src/routes/{profile,rides,participants,messages}.ts` — created in Phase 4 (done)
 
 ## Next step
 
-Phases 0 (Web OAuth client done; iOS/Android clients still pending, not blocking), 1, 2, and 3 are done. **Stopped before starting Phase 4** — next session should resume with **Phase 4 — Rides & Participants API** (`backend/src/routes/{profile,rides,participants,messages}.ts`, zod validation, join-ride atomicity via D1 `batch()`).
+Phases 0 (Web OAuth client done; iOS/Android clients still pending, not blocking), 1, 2, 3, and 4 are done. **Stopped before starting Phase 5** — next session should resume with either **Phase 5 — Realtime Chat via Durable Objects** (nice-to-have, FR-012) or **Phase 6 — Expo Client Wiring** (arguably higher-value next, since both PRD success-criteria paths now have a working API behind them and the client is still unwired to any backend). NFR-002's seeded-load latency measurement (deferred from Phase 4) should happen before or during Phase 8's verification pass, not be forgotten.
