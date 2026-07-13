@@ -1,17 +1,19 @@
 {
   "expo": {
-    "name": ".bootstrap-scaffold",
-    "slug": ".bootstrap-scaffold",
+    "name": "slipstream",
+    "slug": "slipstream",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "bootstrapscaffold",
+    "scheme": "slipstream",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.slipstream.app"
     },
     "android": {
+      "package": "com.slipstream.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

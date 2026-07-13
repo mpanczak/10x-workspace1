@@ -1,0 +1,54 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "slipstream-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-10",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "slipstream-db",
+      "database_id": "289a720e-bce4-4e0a-9895-1d2c1e7e5e5e"
+    }
+  ],
+  "vars": {
+    "BETTER_AUTH_URL": "https://slipstream-api.jd7552820.workers.dev"
+  },
+  "env": {
+    "preview": {
+      "name": "slipstream-api-preview",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "slipstream-db-preview",
+          "database_id": "6de970c9-9493-44e1-bae6-a56ea9ccbce1"
+        }
+      ],
+      "vars": {
+        "BETTER_AUTH_URL": "https://slipstream-api-preview.jd7552820.workers.dev"
+      }
+    }
+  }
+  // "vars": {
+  //   "MY_VAR": "my-variable"
+  // },
+  // "kv_namespaces": [
+  //   {
+  //     "binding": "MY_KV_NAMESPACE",
+  //     "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  //   }
+  // ],
+  // "r2_buckets": [
+  //   {
+  //     "binding": "MY_BUCKET",
+  //     "bucket_name": "my-bucket"
+  //   }
+  // ],
+  // "ai": {
+  //   "binding": "AI"
+  // },
+  // "observability": {
+  //   "enabled": true,
+  //   "head_sampling_rate": 1
+  // }
+}
