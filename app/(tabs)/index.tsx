@@ -3,7 +3,7 @@ import { Button, ScrollView, StyleSheet, TextInput } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { authClient } from '@/lib/auth-client';
+import { authClient, authFetch } from '@/lib/auth-client';
 
 // TEMPORARY — Phase 8 real-device verification screen (auth session +
 // token-refresh/background-state check). Not real app UI; remove once the
@@ -33,8 +33,9 @@ export default function DevAuthTestScreen() {
   };
 
   const fetchRides = async () => {
-    const res = await authClient.$fetch('/api/rides?limit=5');
-    append(`GET /api/rides -> status ${res.error ? res.error.status : 200}, data: ${JSON.stringify(res.data ?? res.error).slice(0, 200)}`);
+    const res = await authFetch('/api/rides?limit=5');
+    const body = await res.text();
+    append(`GET /api/rides -> status ${res.status}, body: ${body.slice(0, 200)}`);
   };
 
   return (

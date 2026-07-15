@@ -10,8 +10,8 @@ function resolveApiUrl(): string {
   return apiUrl;
 }
 
-// Backend calls that need the session cookie (which is everything except
-// /health) should go through authClient.$fetch (lib/auth-client.ts), not a
-// separate plain-fetch helper here — that's the one place the stored
-// SecureStore session gets attached.
+// Backend calls that need the session cookie (everything except /health)
+// should go through authFetch (lib/auth-client.ts) — authClient.$fetch is
+// scoped to better-auth's own /api/auth basePath and 404s on app routes
+// like /api/rides (confirmed on-device, see deploy-plan.md Phase 8).
 export const API_URL = resolveApiUrl();
