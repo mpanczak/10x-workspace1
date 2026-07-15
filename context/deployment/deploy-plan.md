@@ -28,7 +28,7 @@ No monorepo tooling exists and none is being introduced — the backend lives at
 
 ## Current status (as of 2026-07-13)
 
-**Phases 0, 1, 2, 3, 4, 5, and 6 are executed. Stopped before starting Phase 7.**
+**Phases 0, 1, 2, 3, 4, 5, and 6 are executed. Phase 7 is in progress** — workflow files drafted and locally typecheck-verified; CI secrets and the production reviewer gate are not yet configured (see Phase 7 below).
 
 - **Phase 6 (Expo Client Wiring) done**: `app.json` converted to `app.config.ts` (static `ExpoConfig` object) with `extra.apiUrl` sourced from `process.env.EXPO_PUBLIC_API_URL`; `.env.example` added (root `.gitignore` had a gap — only `.env*.local` was ignored, not bare `.env` — fixed alongside). `lib/api-client.ts` resolves `API_URL` from `Constants.expoConfig.extra.apiUrl` (throws a clear error if unset rather than silently hitting `undefined`). `lib/auth-client.ts` wires `createAuthClient` (`better-auth/react`) with the `@better-auth/expo` client plugin, `expo-secure-store` as the token storage. `eas.json` has `development`/`preview`/`production` build profiles, each setting `EXPO_PUBLIC_API_URL` to the correct deployed Worker (preview or production).
   - **Missing dependency caught by actually bundling, not by reading docs**: `@better-auth/expo`'s client imports `expo-network` (for online/offline state) — not called out in Phase 3's research summary. Metro's web bundle failed with a clear "Unable to resolve module" error; fixed with `npx expo install expo-network`. A reminder that peer-dependency completeness for a library this new is worth verifying by actually building, not just trusting a docs-derived package list.
@@ -269,10 +269,49 @@ There are two ways to authenticate, pick one:
 
 ---
 
-## Deferred phases (documented, not started)
+## Phase 7 — CI/CD via GitHub Actions *(in progress)*
 
-### Phase 7 — CI/CD via GitHub Actions
-`.github/workflows/backend-preview.yml` (auto on push/PR touching `backend/**`, non-destructive `wrangler versions upload --env preview`) and `.github/workflows/backend-deploy.yml` (`workflow_dispatch` only, gated by a GitHub `production` Environment with required reviewers, promotes an already-verified preview version). Implements the `ci_provider: github-actions` / `ci_default_flow: manual-promotion` intent recorded in `tech-stack.md`.
+**Goal**: Implement the `ci_provider: github-actions` / `ci_default_flow: manual-promotion` intent recorded in `tech-stack.md` — an auto preview pipeline plus a reviewer-gated manual production promotion, without ever letting an automated push touch production directly.
+
+- [x] `.github/workflows/backend-preview.yml` — triggers on `push` to `main` and on `pull_request`, both scoped to `paths: backend/**` + the workflow file itself. Non-destructive by design: `npm ci` → `npx tsc --noEmit` → apply pending migrations to `slipstream-db-preview` (`--remote --env preview`) → `wrangler versions upload --env preview` (uploads a testable version with its own preview URL, no live-traffic switch). Never touches production.
+- [x] `.github/workflows/backend-deploy.yml` — `workflow_dispatch`-only (manual trigger, takes a `ref` input defaulting to `main`), gated by the GitHub `production` Environment. Same `npm ci` → typecheck → migrate sequence, but against `slipstream-db` (production, no `--env` flag), then `wrangler deploy --minify`. This is the only workflow in the repo allowed to touch production.
+- [x] Verified locally that the CI typecheck step (`npx tsc --noEmit` from `backend/`) passes cleanly against the current `src/` tree — same command, same cwd as the workflow, so this is a faithful dry-run of that step.
+- [x] (MANUAL — human) Create a **scoped** Cloudflare API token for CI — Workers Scripts: Edit + D1: Edit only, limited to this project, no DNS/billing/other-project access. This is Phase 0's Option B, deferred until now: local dev keeps using the `wrangler login` OAuth session (Option A); CI gets its own narrower token so a leaked Actions secret can't do more than deploy this one Worker + migrate this one D1.
+  1. Log into the **`jd7552820@gmail.com`** Cloudflare account (the dedicated project account — not the old `panczakmateusz@gmail.com` one).
+  2. Top-right profile icon → **My Profile** → **API Tokens** tab → **Create Token**.
+  3. Scroll to **Create Custom Token** → **Get started**.
+  4. Name it something identifiable, e.g. `slipstream-ci-github-actions`.
+  5. Permissions: add two rows — `Account` / `Workers Scripts` / `Edit`, and `Account` / `D1` / `Edit`.
+  6. Account Resources: **Include** → **Specific account** → the slipstream account (`jd7552820@gmail.com`, ID `4cdb171bd7259f549e48bec9dc4747d4`).
+  7. Zone Resources: leave untouched (no zone-level permission was added, so nothing to scope here).
+  8. Client IP Address Filtering: leave **off** — GitHub-hosted runners use dynamic IPs; an IP filter will break CI.
+  9. TTL: no expiration is simplest for a solo project; set one if you want to enforce manual rotation.
+  10. **Continue to summary** → confirm only the two permissions show, scoped to the one account → **Create Token**.
+  11. Copy the token immediately (Cloudflare shows it once). Store it in a password manager — never paste it into chat or commit it to the repo.
+  12. Optional sanity check: `curl -s -H "Authorization: Bearer <token>" https://api.cloudflare.com/client/v4/user/tokens/verify` should return `"status":"active"`.
+- [x] (MANUAL — human) Add two repo secrets in GitHub: `CLOUDFLARE_API_TOKEN` (the scoped token above) and `CLOUDFLARE_ACCOUNT_ID` (`4cdb171bd7259f549e48bec9dc4747d4`, already known from Phase 0). Both need to be **repository-level** secrets (not environment-scoped), since `backend-preview.yml` runs outside any Environment and still needs to read them.
+  - Web UI: `github.com/mpanczak/10x-workspace1` → **Settings** → **Secrets and variables** → **Actions** → **Repository secrets** tab → **New repository secret** → add `CLOUDFLARE_API_TOKEN` (paste the token) → **Add secret** → repeat for `CLOUDFLARE_ACCOUNT_ID` (value `4cdb171bd7259f549e48bec9dc4747d4`).
+  - CLI alternative (after `gh auth login`, since this session's `gh` is unauthenticated): `gh secret set CLOUDFLARE_API_TOKEN --repo mpanczak/10x-workspace1` (paste token when prompted), `gh secret set CLOUDFLARE_ACCOUNT_ID --repo mpanczak/10x-workspace1 --body "4cdb171bd7259f549e48bec9dc4747d4"`.
+- [x] (MANUAL — human) Create the `production` GitHub Environment and add a required reviewer, so the promotion job pauses for approval rather than running unattended.
+  1. Same repo → **Settings** → **Environments** (left sidebar, under "Code and automation") → **New environment**.
+  2. Name it **exactly** `production` — must match `backend-deploy.yml`'s `environment: production` key verbatim (case-sensitive).
+  3. **Configure environment** → under **Deployment protection rules**, check **Required reviewers** → add yourself (or another maintainer) → **Save protection rules**.
+  4. Optional: under **Deployment branches and tags**, restrict to `main` only, matching the workflow's default `ref` input.
+  5. Verify: the Environments list should now show `production` with "Required reviewers: 1" (or however many were added).
+- [ ] Commit `.github/workflows/*.yml` (currently untracked — confirmed via `git status`) once the secrets/environment above are confirmed in place, then push and confirm `backend-preview.yml` auto-triggers on the next `backend/**`-touching push with green migrate + upload steps.
+- [ ] Dry-run `workflow_dispatch` on `backend-deploy.yml` at least once, confirming the reviewer gate actually pauses the job before it runs — carried forward as part of Phase 8's own "dry-run the production promotion gate at least once" line, but worth doing once here too since it's this phase's own done-when condition.
+
+**Edge cases**
+- **This environment's `gh` CLI is unauthenticated** (`gh auth status` → not logged in) — secret creation, Environment creation, and reviewer configuration all require either the GitHub web UI or a human-run `gh auth login` first. None of this was attempted via automated tool call, consistent with this repo's CLAUDE.md posture that tokens are human-provisioned and never pass through chat.
+- **Fork PRs won't have `secrets.CLOUDFLARE_*` available**: GitHub withholds repo secrets from `pull_request` runs triggered by forked repos. Not an issue today (solo-maintainer repo, no external contributors) — worth remembering if the project ever accepts outside PRs, since `backend-preview.yml` would then fail the migrate/upload steps on those specific runs (not a security hole, just a broken check).
+- **Preview migration step is safe to re-run with nothing pending**: confirmed in Phase 2 that `wrangler d1 migrations apply ... --remote` cleanly no-ops (`No migrations to apply!`) rather than erroring, so every `backend-preview.yml` run re-applying the same migration set is expected, not wasted-but-risky.
+- **Local wrangler version drives CI too**: because `wrangler` is a pinned devDependency (not a GitHub Action version pin), `npm ci` in the workflow resolves the exact same `4.110.0` used locally — keeps Phase 1's "local/CI Wrangler versions stay resolvable to the same lockfile version" goal intact through this phase.
+
+**Done when**: Cloudflare CI token + both GitHub secrets + the `production` Environment (with required reviewers) exist; `backend-preview.yml` has run at least once from a real `backend/**` push with green steps; `backend-deploy.yml` has been dry-run via `workflow_dispatch` at least once and observably paused on the reviewer gate before completing. **Status: workflow files drafted and locally typecheck-verified; Cloudflare CI token, GitHub secrets, and the production Environment/reviewer gate confirmed done by the human operator, 2026-07-15 (not independently re-verified from this session — `gh` CLI here is unauthenticated). Not yet committed/pushed; no real preview run or production dry-run has happened yet.**
+
+---
+
+## Deferred phases (documented, not started)
 
 ### Phase 8 — Verification / Smoke-Test Phase
 Both PRD paths run end-to-end through the real Expo app on physical iOS and Android hardware — simulator-only testing is insufficient for token-refresh/background-state auth bugs. Confirm NFR-002 empirically, confirm the privacy guardrail, dry-run the production promotion gate at least once.
@@ -301,7 +340,8 @@ This file. Update incrementally per phase completion as execution resumes — no
 - `backend/src/middleware/require-auth.ts`, `backend/src/routes/{profile,rides,participants,messages}.ts` — created in Phase 4 (done)
 - `backend/src/durable-objects/chat-room.ts`, `backend/src/routes/chat.ts` — created in Phase 5 (done)
 - `app.config.ts` (replaces `app.json`), `.env.example`, `eas.json`, `lib/api-client.ts`, `lib/auth-client.ts` — created in Phase 6 (done)
+- `.github/workflows/backend-preview.yml`, `.github/workflows/backend-deploy.yml` — created in Phase 7, drafted and typecheck-verified locally; currently untracked (not yet committed, see Phase 7 above)
 
 ## Next step
 
-Phases 0 (Web OAuth client done; iOS/Android clients still pending, not blocking), 1, 2, 3, 4, 5, and 6 are done. **Stopped before starting Phase 7** — next session should resume with **Phase 7 — CI/CD via GitHub Actions**. NFR-002's seeded-load latency measurement (deferred from Phase 4) and a real native (iOS/Android) + EAS-build verification pass (deferred from Phase 6) should both happen during Phase 8, not be forgotten.
+Phases 0 (Web OAuth client done; iOS/Android clients still pending, not blocking), 1, 2, 3, 4, 5, and 6 are done. **Phase 7 is in progress**: both workflow files are drafted and locally typecheck-verified but not yet committed. Before this phase can close, a human needs to (1) create the scoped Cloudflare CI token, (2) add the `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` GitHub secrets, and (3) create the `production` Environment with a required reviewer — none of these are automatable from this session (`gh` CLI here is unauthenticated, and token provisioning is human-only per this repo's own posture). Once those three are done, commit + push the workflow files and confirm both a real preview run and a dry-run production promotion. NFR-002's seeded-load latency measurement (deferred from Phase 4) and a real native (iOS/Android) + EAS-build verification pass (deferred from Phase 6) should both happen during Phase 8, not be forgotten.
