@@ -54,6 +54,9 @@ const config: ExpoConfig = {
     // Constants.expoConfig.extra, not process.env.EXPO_PUBLIC_API_URL
     // directly, so there's one consistent access path (see lib/api-client.ts).
     apiUrl: process.env.EXPO_PUBLIC_API_URL,
+    eas: {
+      projectId: '2e671d55-abd6-4836-8df5-69f9a21801f4',
+    },
   },
 };
 
