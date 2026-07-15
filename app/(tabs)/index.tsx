@@ -1,98 +1,102 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { useState } from 'react';
+import { Button, ScrollView, StyleSheet, TextInput } from 'react-native';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { authClient } from '@/lib/auth-client';
 
-export default function HomeScreen() {
+// TEMPORARY — Phase 8 real-device verification screen (auth session +
+// token-refresh/background-state check). Not real app UI; remove once the
+// actual sign-in/rides screens are built.
+export default function DevAuthTestScreen() {
+  const { data: session, isPending } = authClient.useSession();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [log, setLog] = useState('');
+
+  const append = (msg: string) => setLog((prev) => `${new Date().toLocaleTimeString()} ${msg}\n${prev}`);
+
+  const signUp = async () => {
+    const { error } = await authClient.signUp.email({ email, password, name: name || 'Dev Tester' });
+    append(error ? `signUp error: ${error.message}` : 'signUp ok');
+  };
+
+  const signIn = async () => {
+    const { error } = await authClient.signIn.email({ email, password });
+    append(error ? `signIn error: ${error.message}` : 'signIn ok');
+  };
+
+  const signOut = async () => {
+    await authClient.signOut();
+    append('signed out');
+  };
+
+  const fetchRides = async () => {
+    const res = await authClient.$fetch('/api/rides?limit=5');
+    append(`GET /api/rides -> status ${res.error ? res.error.status : 200}, data: ${JSON.stringify(res.data ?? res.error).slice(0, 200)}`);
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <ScrollView contentContainerStyle={styles.container}>
+      <ThemedText type="title">Phase 8 — Auth Test</ThemedText>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
+      <ThemedView style={styles.block}>
+        <ThemedText type="subtitle">Session</ThemedText>
+        <ThemedText>{isPending ? 'loading…' : session ? `logged in as ${session.user.email}` : 'not logged in'}</ThemedText>
       </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
+
+      <ThemedView style={styles.block}>
+        <TextInput
+          placeholder="name (sign up only)"
+          value={name}
+          onChangeText={setName}
+          style={styles.input}
+          autoCapitalize="none"
+        />
+        <TextInput
+          placeholder="email"
+          value={email}
+          onChangeText={setEmail}
+          style={styles.input}
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
+        <TextInput
+          placeholder="password"
+          value={password}
+          onChangeText={setPassword}
+          style={styles.input}
+          secureTextEntry
+          autoCapitalize="none"
+        />
+        <Button title="Sign Up" onPress={signUp} />
+        <Button title="Sign In" onPress={signIn} />
+        <Button title="Sign Out" onPress={signOut} />
+        <Button title="Fetch /api/rides" onPress={fetchRides} />
       </ThemedView>
-    </ParallaxScrollView>
+
+      <ThemedView style={styles.block}>
+        <ThemedText type="subtitle">Log</ThemedText>
+        <ThemedText>{log}</ThemedText>
+      </ThemedView>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  container: {
+    padding: 16,
+    gap: 16,
+    paddingTop: 60,
+  },
+  block: {
     gap: 8,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  input: {
+    borderWidth: 1,
+    borderColor: '#888',
+    borderRadius: 6,
+    padding: 8,
   },
 });
