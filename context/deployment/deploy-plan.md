@@ -353,6 +353,8 @@ This isn't a build defect — Phase 6's own goal line says explicitly "not full 
 
 **Done when**: NFR-002 measured against a seeded (not near-empty) dataset and confirmed under 2s p95 — done. Privacy guardrail re-confirmed — done. Production promotion gate dry-run — done (Phase 7). Auth-session/token-refresh verified on-device — pending the user's run of the temporary test screen. Both PRD paths (US-01, US-02) and Google OAuth click-through end-to-end — **BLOCKED on frontend implementation, out of this deploy plan's scope**, tracked forward rather than silently dropped. **Status: in progress, 2026-07-15** — everything automatable and everything achievable without new frontend work is done or in flight; full E2E is a real, separate scope gap surfaced by this phase, not a task this session can complete.
 
+**RESUME HERE if this session is interrupted**: third Android build in flight, EAS build ID `2b94253a-7d99-43e2-bd86-c65c9c05b52b` — check its status with `npx eas-cli@latest build:view 2b94253a-7d99-43e2-bd86-c65c9c05b52b` (a fresh session won't have the old background-task handle, but the build itself runs on EAS's servers independent of this machine). Once `FINISHED`, its page (`https://expo.dev/accounts/slipstream-10xs-team/projects/slipstream/builds/2b94253a-7d99-43e2-bd86-c65c9c05b52b`) has the install link — send that to the user and have them retest step 5's checklist (sign in → "Fetch /api/rides" should now return 200, not 404 — see the `authFetch` bugfix above) plus the background/foreground token-refresh check. Everything else in this phase is already committed and pushed as of commit `82a8d90`.
+
 ---
 
 ## Deferred phases (documented, not started)
