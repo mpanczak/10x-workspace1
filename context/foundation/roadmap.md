@@ -141,15 +141,17 @@ Foundations poniżej zakładają, że to jest obecne i NIE budują tego od nowa.
 
 ## Backlog Handoff
 
-| Roadmap ID | Change ID               | Suggested issue title                                             | Ready for `/10x-plan` | Notes                       |
-| ---------- | ------------------------ | ------------------------------------------------------------------- | ---------------------- | ---------------------------- |
-| F-01       | frontend-auth-shell       | Frontend: powłoka nawigacji z bramką sesji auth                    | yes                    | —                            |
-| S-01       | rider-onboarding-profile  | Frontend: rejestracja, logowanie i profil jeźdźca + motocykla       | no                     | Po F-01                     |
-| S-02       | create-ride               | Frontend: tworzenie przejazdu (gwiazda przewodnia)                 | no                     | Po S-01                     |
-| S-03       | browse-filter-rides       | Frontend: przeglądanie i filtrowanie listy przejazdów               | no                     | Po S-01, równolegle z S-02   |
-| S-04       | join-ride                 | Frontend: szczegóły przejazdu + dołączanie                          | no                     | Po S-02 i S-03               |
-| S-05       | message-organizer         | Frontend: wiadomość do organizatora                                 | no                     | Po S-04, równolegle z S-06   |
-| S-06       | manage-participants       | Frontend: usuwanie uczestnika (organizator)                         | no                     | Po S-04, równolegle z S-05   |
+| Roadmap ID | Change ID               | Suggested issue title                                             | Ready for `/10x-plan` | GitHub Issue | Notes                       |
+| ---------- | ------------------------ | ------------------------------------------------------------------- | ---------------------- | ------------ | ---------------------------- |
+| F-01       | frontend-auth-shell       | Frontend: powłoka nawigacji z bramką sesji auth                    | yes                    | #1           | —                            |
+| S-01       | rider-onboarding-profile  | Frontend: rejestracja, logowanie i profil jeźdźca + motocykla       | no                     | #2           | Po F-01                     |
+| S-02       | create-ride               | Frontend: tworzenie przejazdu (gwiazda przewodnia)                 | no                     | #3           | Po S-01                     |
+| S-03       | browse-filter-rides       | Frontend: przeglądanie i filtrowanie listy przejazdów               | no                     | #4           | Po S-01, równolegle z S-02   |
+| S-04       | join-ride                 | Frontend: szczegóły przejazdu + dołączanie                          | no                     | #5           | Po S-02 i S-03               |
+| S-05       | message-organizer         | Frontend: wiadomość do organizatora                                 | no                     | #6           | Po S-04, równolegle z S-06   |
+| S-06       | manage-participants       | Frontend: usuwanie uczestnika (organizator)                         | no                     | #7           | Po S-04, równolegle z S-05   |
+
+Pełna migracja (F-01..S-06 + Open Roadmap Questions + Parked) do GitHub Issues: 18 issues, label `roadmap` (`gh issue list --label roadmap --state all`). OQ-001..005 → #8-#12, P-01..P-06 → #13-#18.
 
 ## Open Roadmap Questions
 
