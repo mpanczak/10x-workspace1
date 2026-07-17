@@ -189,16 +189,16 @@ Not applicable — no data model or backend changes in this change.
 
 #### Automated
 
-- [ ] 1.1 Type checking passes: `npx tsc --noEmit`
-- [ ] 1.2 Linting passes: `npm run lint`
+- [x] 1.1 Type checking passes: `npx tsc --noEmit`
+- [x] 1.2 Linting passes: `npm run lint`
 
 #### Manual
 
-- [ ] 1.3 Cold start while signed out lands on the `(auth)` sign-in screen
-- [ ] 1.4 Signing in redirects to the `(app)` Home screen showing the correct email
-- [ ] 1.5 Force-quit + relaunch while signed in lands directly on `(app)` Home
-- [ ] 1.6 Sign-out returns to the `(auth)` sign-in screen
-- [ ] 1.7 No visible flash of the wrong group's content during the session-pending window
+- [x] 1.3 Cold start while signed out lands on the `(auth)` sign-in screen
+- [x] 1.4 Signing in redirects to the `(app)` Home screen showing the correct email
+- [x] 1.5 Force-quit + relaunch while signed in lands directly on `(app)` Home
+- [x] 1.6 Sign-out returns to the `(auth)` sign-in screen
+- [x] 1.7 No visible flash of the wrong group's content during the session-pending window
 
 ### Phase 2: Starter cleanup
 
