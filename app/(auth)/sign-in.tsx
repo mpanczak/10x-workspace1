@@ -12,9 +12,15 @@ export default function SignInScreen() {
 
   const signIn = async () => {
     setError(null);
-    const { error: signInError } = await authClient.signIn.email({ email, password });
-    if (signInError) {
-      setError(signInError.message ?? 'Sign in failed');
+    try {
+      const { error: signInError } = await authClient.signIn.email({ email, password });
+      if (signInError) {
+        console.error('signIn error:', signInError);
+        setError(signInError.message ?? `Sign in failed (${signInError.status ?? 'unknown'})`);
+      }
+    } catch (e) {
+      console.error('signIn threw:', e);
+      setError(e instanceof Error ? e.message : 'Sign in threw an unexpected error');
     }
   };
 

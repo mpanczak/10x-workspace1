@@ -189,25 +189,25 @@ Not applicable — no data model or backend changes in this change.
 
 #### Automated
 
-- [x] 1.1 Type checking passes: `npx tsc --noEmit`
-- [x] 1.2 Linting passes: `npm run lint`
+- [x] 1.1 Type checking passes: `npx tsc --noEmit` — 593b875
+- [x] 1.2 Linting passes: `npm run lint` — 593b875
 
 #### Manual
 
-- [x] 1.3 Cold start while signed out lands on the `(auth)` sign-in screen
-- [x] 1.4 Signing in redirects to the `(app)` Home screen showing the correct email
-- [x] 1.5 Force-quit + relaunch while signed in lands directly on `(app)` Home
-- [x] 1.6 Sign-out returns to the `(auth)` sign-in screen
-- [x] 1.7 No visible flash of the wrong group's content during the session-pending window
+- [x] 1.3 Cold start while signed out lands on the `(auth)` sign-in screen — 593b875
+- [x] 1.4 Signing in redirects to the `(app)` Home screen showing the correct email — 593b875
+- [x] 1.5 Force-quit + relaunch while signed in lands directly on `(app)` Home — 593b875
+- [x] 1.6 Sign-out returns to the `(auth)` sign-in screen — 593b875
+- [x] 1.7 No visible flash of the wrong group's content during the session-pending window — 593b875
 
 ### Phase 2: Starter cleanup
 
 #### Automated
 
-- [ ] 2.1 Type checking passes: `npx tsc --noEmit`
-- [ ] 2.2 Linting passes: `npm run lint`
+- [x] 2.1 Type checking passes: `npx tsc --noEmit`
+- [x] 2.2 Linting passes: `npm run lint`
 
 #### Manual
 
-- [ ] 2.3 App still cold-starts correctly into `(auth)` or `(app)` as appropriate
-- [ ] 2.4 No dangling references to deleted files cause a Metro bundler error
+- [x] 2.3 App still cold-starts correctly into `(auth)` or `(app)` as appropriate
+- [x] 2.4 No dangling references to deleted files cause a Metro bundler error
