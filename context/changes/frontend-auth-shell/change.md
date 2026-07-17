@@ -1,7 +1,7 @@
 ---
 change_id: frontend-auth-shell
 title: Expo Router navigation shell with auth session gate
-status: implementing
+status: implemented
 created: 2026-07-17
 updated: 2026-07-17
 archived_at: null

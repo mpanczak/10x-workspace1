@@ -204,10 +204,10 @@ Not applicable — no data model or backend changes in this change.
 
 #### Automated
 
-- [x] 2.1 Type checking passes: `npx tsc --noEmit`
-- [x] 2.2 Linting passes: `npm run lint`
+- [x] 2.1 Type checking passes: `npx tsc --noEmit` — 9ec2ad6
+- [x] 2.2 Linting passes: `npm run lint` — 9ec2ad6
 
 #### Manual
 
-- [x] 2.3 App still cold-starts correctly into `(auth)` or `(app)` as appropriate
-- [x] 2.4 No dangling references to deleted files cause a Metro bundler error
+- [x] 2.3 App still cold-starts correctly into `(auth)` or `(app)` as appropriate — 9ec2ad6
+- [x] 2.4 No dangling references to deleted files cause a Metro bundler error — 9ec2ad6
